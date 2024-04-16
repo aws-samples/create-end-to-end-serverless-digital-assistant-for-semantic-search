@@ -1,11 +1,6 @@
-## My Project
+## Create end-to-end serverless digital assistant for semantic search
 
-TODO: Fill this README out!
-
-Be sure to:
-
-* Change the title in this README
-* Edit your repository description on GitHub
+This repository includes samples for the blog post "Create end-to-end serverless digital assistant for semantic search"
 
 ## Security
 
