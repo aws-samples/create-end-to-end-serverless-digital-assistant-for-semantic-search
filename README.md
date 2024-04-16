@@ -1,6 +1,6 @@
 ## Create end-to-end serverless digital assistant for semantic search
 
-This repository includes samples for the blog post "Create end-to-end serverless digital assistant for semantic search"
+This repository includes samples for the AWS blog "Create end-to-end serverless digital assistant for semantic search"
 
 ## Security
 
