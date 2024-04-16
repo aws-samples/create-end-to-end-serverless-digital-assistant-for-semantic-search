@@ -1,0 +1,60 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template to create cognito user pool using email as a required user attribute
+Parameters:
+  UserPoolName:
+    Type: String
+    Description: Name of the User Pool
+    Default: webapp-userpool
+    MinLength: 1
+    MaxLength: 128
+    AllowedPattern: ^[\w\s+=,.@-]+$
+    ConstraintDescription: Must contain only alphanumeric characters and punctuation
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref UserPoolName
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      UsernameAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+          RequireUppercase: false
+      UsernameConfiguration:
+        CaseSensitive: false
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: admin_only
+            Priority: 1
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub ${UserPoolName}-client
+      GenerateSecret: false
+      UserPoolId: !Ref UserPool
+Outputs:
+  UserPoolId:
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub ${AWS::StackName}-UserPoolId
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub ${AWS::StackName}-UserPoolClientId
+  UserPoolArn:
+    Value: !GetAtt UserPool.Arn
+  UserPoolName:
+    Value: !Select
+      - 1
+      - !Split ["/", !GetAtt UserPool.Arn]

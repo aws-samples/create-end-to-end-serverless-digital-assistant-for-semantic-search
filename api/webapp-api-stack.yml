@@ -1,0 +1,275 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template to create API interacting with Bedrock
+Parameters:
+  ApiGatewayName:
+    Type: String
+    Description: Name of the API Gateway
+    Default: webapp-api
+  LambdaAuthorizerFunctionName:
+    Type: String
+    Description: ARN of the Lambda Authorizer function
+    Default: webapp-lambda-auth
+  LambdaAuthorizerFunctionMemorySize:
+    Type: Number
+    Description: Memory size of the Lambda Authorizer function
+    Default: 4096
+  LambdaAuthorizerFunctionRuntime:
+    Type: String
+    Description: Runtime of the Lambda function
+    Default: python3.12
+  LambdaAuthorizerS3Bucket:
+    Type: String
+    Description: S3 bucket for the Lambda Authorizer function's code (zip file)
+  LambdaAuthorizerS3Key:
+    Type: String
+    Description: S3 key for the Lambda Authorizer function's code (zip file)
+  LambdaKnowledgeBaseStackName:
+    Type: String
+    Description: Name of the KnowledgeBase Lambda Function Stack
+    Default: webapp-lambda-knowledgebase-stack
+  LambdaKnowledgeBaseFunctionNameExportName:
+    Type: String
+    Description: Name of the Lambda function interacting with Bedrock Knowledge Base
+    Default: BedrockLambdaFunctionNameExportName
+  CognitoStackName:
+    Type: String
+    Description: Name of the Cognito Stack
+    Default: webapp-userpool-stack
+  CognitoUserPoolIdExportName:
+    Type: String
+    Description: Export Name of Cognito User Pool ID in Cognito Stack
+    Default: UserPoolId
+  CognitoUserPoolClientIdExportName:
+    Type: String
+    Description: Export Name of Cognito User Pool Client ID in Cognito Stack
+    Default: UserPoolClientId
+Resources:
+  LambdaAuthorizerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Lambda function to decode JWT token
+      FunctionName: !Ref LambdaAuthorizerFunctionName
+      Runtime: !Ref LambdaAuthorizerFunctionRuntime
+      Handler: lambda-authorizer.handler
+      Role: !GetAtt LambdaAuthorizerFunctionRole.Arn
+      MemorySize: !Ref LambdaAuthorizerFunctionMemorySize
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ID: !ImportValue
+            Fn::Sub: ${CognitoStackName}-${CognitoUserPoolIdExportName}
+          COGNITO_APP_CLIENT_ID: !ImportValue
+            Fn::Sub: ${CognitoStackName}-${CognitoUserPoolClientIdExportName}
+      Code:
+        S3Bucket: !Ref LambdaAuthorizerS3Bucket
+        S3Key: !Ref LambdaAuthorizerS3Key
+  LambdaAuthorizerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaAuthorizerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+  LambdaAuthorizerFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - apigateway.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: LambdaAuthorizerFunctionPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaAuthorizerFunctionName}
+              - Effect: Allow
+                Action:
+                  - sts:GetServiceBearerToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+  ApiGatewayIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: LambdaAccess
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaAuthorizerFunctionName}
+  ApiGatewayRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Ref ApiGatewayName
+      Body:
+        openapi: 3.0.1
+        info:
+          title: !Ref ApiGatewayName
+          version: '1.0'
+        paths:
+          /assistant/bedrock:
+            post:
+              parameters:
+                - name: proxy
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+              security:
+                - apiAuthorizer: []
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                uri: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:$${stageVariables.lambda_function_name}/invocations
+                passthroughBehavior: when_no_match
+                type: aws_proxy
+            options:
+              parameters:
+                - name: proxy
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+              responses:
+                '200':
+                  description: 200 response
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: string
+                    Access-Control-Allow-Methods:
+                      schema:
+                        type: string
+                    Access-Control-Allow-Headers:
+                      schema:
+                        type: string
+                  content: {}
+              x-amazon-apigateway-integration:
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: '''DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'''
+                      method.response.header.Access-Control-Allow-Headers: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'''
+                      method.response.header.Access-Control-Allow-Origin: '''*'''
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                passthroughBehavior: when_no_match
+                type: mock
+        components:
+          securitySchemes:
+            apiAuthorizer:
+              type: apiKey
+              name: Authorization
+              in: header
+              x-amazon-apigateway-authtype: custom
+              x-amazon-apigateway-authorizer:
+                authorizerUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaAuthorizerFunctionName}/invocations
+                authorizerCredentials: !GetAtt ApiGatewayIAMRole.Arn
+                authorizerResultTtlInSeconds: 0
+                type: token
+        x-amazon-apigateway-gateway-responses:
+          DEFAULT_4XX:
+            responseParameters:
+              gatewayresponse.header.Access-Control-Allow-Headers: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'''
+              gatewayresponse.header.Access-Control-Allow-Methods: '''DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'''
+              gatewayresponse.header.Access-Control-Allow-Origin: '''*'''
+          DEFAULT_5XX:
+            responseParameters:
+              gatewayresponse.header.Access-Control-Allow-Headers: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'''
+              gatewayresponse.header.Access-Control-Allow-Methods: '''DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'''
+              gatewayresponse.header.Access-Control-Allow-Origin: '''*'''
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+  ApiGatewayStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      DeploymentId: !Ref ApiGatewayDeployment
+      RestApiId: !Ref ApiGatewayRestApi
+      StageName: v1
+      Variables:
+        lambda_function_name: !ImportValue
+          Fn::Sub: ${LambdaKnowledgeBaseStackName}-${LambdaKnowledgeBaseFunctionNameExportName}
+  ApiGatewayCloudWatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: ApiGatewayLogsPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                  - logs:PutLogEvents
+                  - logs:GetLogEvents
+                  - logs:FilterLogEvents
+                Resource: '*'
+Outputs:
+  ApiGatewayName:
+    Description: Name of the API Gateway
+    Value: !Ref ApiGatewayRestApi
+  ApiGatewayUrl:
+    Description: URL of your API endpoint
+    Value: !Join
+      - ''
+      - - https://
+        - !Ref ApiGatewayRestApi
+        - .execute-api.
+        - !Ref AWS::Region
+        - .amazonaws.com/v1
+  LambdaAuthorizerFunctionName:
+    Description: Name of the Lambda Authorizer function
+    Value: !Ref LambdaAuthorizerFunctionName
+  LambdaAuthorizerFunctionArn:
+    Description: ARN of the Lambda Authorizer function
+    Value: !GetAtt LambdaAuthorizerFunction.Arn
+  ApiGatewayCloudWatchRoleArn:
+    Description: ARN of the API Gateway CloudWatch role
+    Value: !GetAtt ApiGatewayCloudWatchRole.Arn

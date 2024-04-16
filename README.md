@@ -1,11 +1,8 @@
-## My Project
+## Create end-to-end serverless digital assistant for semantic search
 
-TODO: Fill this README out!
+This repository includes the samples used in the AWS blog post **Create end-to-end serverless digital assistant for semantic search**.
 
-Be sure to:
-
-* Change the title in this README
-* Edit your repository description on GitHub
+To dive deeper into this solution, a self-paced workshop is available in [AWS Workshop Studio](https://catalog.us-east-1.prod.workshops.aws/), at this [location](https://catalog.us-east-1.prod.workshops.aws/workshops/0699ac27-0fd1-4527-a939-b623ee7889c3/en-US).
 
 ## Security
 
